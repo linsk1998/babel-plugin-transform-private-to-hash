@@ -44,3 +44,5 @@ coverage/
 tests/
 # 源代码
 src/
+tsconfig.json
+.npmrc

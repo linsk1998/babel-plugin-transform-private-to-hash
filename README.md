@@ -10,7 +10,7 @@ A Babel plugin that transforms ES2022+ private class fields/methods into public 
 
 - 🔒 Converts private fields/methods to uniquely hashed public properties
 - 🧂 Configurable salt for hash generation
-- 📏 Customizable hash length (1-32 chars)
+- 📏 Customizable hash length (1-8 chars)
 - 🚫 Configurable enumerability (default: false)
 - 💪 Full support for static/instance properties and methods
 - ✅ Handles `in` operator checks correctly
@@ -67,15 +67,6 @@ class MyClass {
 
 ```javascript
 class MyClass {
-  static {
-    Object.defineProperty(this, "__a1b2c3d4", {
-      value: 10,
-      enumerable: false,
-      configurable: true,
-      writable: true
-    });
-  }
-
   constructor() {
     Object.defineProperty(this, "__e5f6g7h8", {
       value: 42,
@@ -89,6 +80,15 @@ class MyClass {
 
   check() {
     return "__e5f6g7h8" in this && this.__i9j0k1l2();
+  }
+
+  static {
+    Object.defineProperty(this, "__a1b2c3d4", {
+      value: 10,
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
   }
 }
 ```

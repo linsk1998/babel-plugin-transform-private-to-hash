@@ -1,4 +1,4 @@
-class MyClass {
+class SuperClass {
   #foo = 42;
   static #bar = 10;
   #in() {
@@ -14,5 +14,18 @@ class MyClass {
   }
   static staticOut() {
     this.#staticIn();
+  }
+}
+
+class SubClass extends SuperClass {
+  #foo = 44;
+  static #bar = 45;
+}
+
+class SubClass2 extends SuperClass {
+  #foo = 44;
+  constructor() {
+    super()
+    alert(1)
   }
 }

@@ -1,4 +1,4 @@
-class MyClass {
+class SuperClass {
   constructor() {
     Object.defineProperty(this, "__9ee5cea2", {
       value: 42,
@@ -28,5 +28,36 @@ class MyClass {
       configurable: true,
       writable: true
     });
+  }
+}
+class SubClass extends SuperClass {
+  constructor() {
+    super(...arguments);
+    Object.defineProperty(this, "__fb34dd4f", {
+      value: 44,
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
+  }
+  static {
+    Object.defineProperty(this, "__7808ad86", {
+      value: 45,
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
+  }
+}
+class SubClass2 extends SuperClass {
+  constructor() {
+    super();
+    Object.defineProperty(this, "__4cfae5a1", {
+      value: 44,
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
+    alert(1);
   }
 }

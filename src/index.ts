@@ -20,7 +20,7 @@ export = declare((api, options: PluginOptions = {}) => {
 	const t = api.types;
 	const { salt = '', enumerable = false, hashLength = 8 } = options;
 	return {
-		name: 'private-to-hash',
+		name: 'transform-private-to-hash',
 		pre(file) {
 			this.classCounter = 0;
 			this.classHashStore = new WeakMap();
@@ -82,7 +82,7 @@ export = declare((api, options: PluginOptions = {}) => {
 						}
 
 						instanceFields.forEach((express, name) => {
-							constructorPath.get('body').pushContainer('body', t.expressionStatement(
+							let statement = t.expressionStatement(
 								t.callExpression(
 									t.memberExpression(t.identifier('Object'), t.identifier('defineProperty')),
 									[
@@ -96,7 +96,21 @@ export = declare((api, options: PluginOptions = {}) => {
 										])
 									]
 								)
-							));
+							);
+							let superPath = constructorPath.get('body.body').find(p => {
+								if(p.isExpressionStatement()) {
+									let callee: NodePath = p.get('expression.callee') as any;
+									if(callee && callee.isSuper()) {
+										return true;
+									}
+								}
+								return false;
+							});
+							if(superPath) {
+								superPath.insertAfter(statement);
+							} else {
+								constructorPath.get('body').unshiftContainer('body', statement);
+							}
 						});
 					}
 					// 处理静态字段
