@@ -166,7 +166,7 @@ export = declare((api, options: PluginOptions = {}) => {
 					const privateName = privateNode.key.id.name;
 					const hash = hashes.get(privateName);
 					if(hash) {
-						methodPath.replaceWith(t.classMethod("method", t.identifier(hash), privateNode.params, privateNode.body, false, privateNode.static, privateNode.generator, privateNode.async));
+						methodPath.replaceWith(t.classMethod(privateNode.kind, t.identifier(hash), privateNode.params, privateNode.body, privateNode.computed, privateNode.static, privateNode.generator, privateNode.async));
 					}
 				}
 			},

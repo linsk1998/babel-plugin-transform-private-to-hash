@@ -24,6 +24,9 @@ describe('babel-plugin-transform-private-to-hash', function () {
 	test('property', {
 		enumerable: true
 	});
+	test('method', {
+		enumerable: true
+	});
 	test('hashLength', {
 		enumerable: true,
 		hashLength: 6
