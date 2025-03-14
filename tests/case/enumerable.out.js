@@ -1,6 +1,7 @@
 class MyClass {
-  __ae444707 = 42;
-  static __e763e2d3 = 10;
+  constructor() {
+    this.__ae444707 = 42;
+  }
   __42ee355a() {
     console.log(this.__ae444707);
     console.log("__ae444707" in this);
@@ -14,5 +15,8 @@ class MyClass {
   }
   static staticOut() {
     this.__6eb46d85();
+  }
+  static {
+    this.__e763e2d3 = 10;
   }
 }

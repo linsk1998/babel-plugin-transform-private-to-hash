@@ -1,6 +1,5 @@
 import type { NodePath, PluginPass, types as t } from '@babel/core';
 import { declare } from '@babel/helper-plugin-utils';
-import path = require('path');
 import slash = require('slash');
 import murmurhash = require('murmurhash');
 
@@ -33,6 +32,9 @@ export = declare((api, options: PluginOptions = {}) => {
 				const classIndex = state.classCounter++;
 
 				const privateHashes = new Map<string, string>();
+				// 处理不可枚举的情况
+				const staticFields: Map<string, t.Expression> = new Map();
+				const instanceFields: Map<string, t.Expression> = new Map();
 
 				// 收集所有私有属性和方法的哈希
 				classPath.node.body.body.forEach(prop => {
@@ -44,15 +46,17 @@ export = declare((api, options: PluginOptions = {}) => {
 						privateHashes.set(privateName, `__${hash}`);
 					}
 				});
-				state.classHashStore.set(classPath.node, privateHashes);
 
-				// 处理不可枚举的情况
-				if(!enumerable) {
-					const staticFields: Map<string, t.Expression> = new Map();
-					const instanceFields: Map<string, t.Expression> = new Map();
-					const bodyBodyPaths = classPath.get('body.body') as NodePath[];
-					bodyBodyPaths.forEach(propPath => {
-						let prop = propPath.node;
+				const bodyBodyPaths = classPath.get('body.body') as NodePath[];
+				bodyBodyPaths.forEach(propPath => {
+					let prop = propPath.node;
+					if(t.isClassPrivateProperty(prop) || t.isClassPrivateMethod(prop)) {
+						const privateName = prop.key.id.name;
+						const hashInput = `${salt}_${relativePath}_${classIndex}_${privateName}`;
+						const fullHash = murmurhash.v3(hashInput).toString(16);
+						const hash = fullHash.slice(0, hashLength);
+						privateHashes.set(privateName, `__${hash}`);
+
 						if(t.isClassPrivateProperty(prop)) {
 							if(prop.static) {
 								staticFields.set(prop.key.id.name, prop.value);
@@ -61,28 +65,36 @@ export = declare((api, options: PluginOptions = {}) => {
 							}
 							propPath.remove();
 						}
-					});
+					}
+				});
+				state.classHashStore.set(classPath.node, privateHashes);
 
-					// 处理实例字段
-					if(instanceFields.size > 0) {
-						let constructorPath: NodePath<t.ClassMethod> = bodyBodyPaths.find(p => p.isClassMethod() && p.node.kind === 'constructor') as any;
-						if(!constructorPath) {
-							let constructorNode = t.classMethod(
-								'constructor',
-								t.identifier('constructor'),
-								[],
-								t.blockStatement(
-									classPath.node.superClass ?
-										[t.expressionStatement(t.callExpression(t.super(), [t.spreadElement(t.identifier('arguments'))]))] :
-										[],
-								)
-							);
-							const bodyPath: NodePath<t.ClassBody> = classPath.get('body');
-							constructorPath = bodyPath.unshiftContainer('body', constructorNode)[0];
-						}
+				// 处理实例字段
+				if(instanceFields.size > 0) {
+					let constructorPath: NodePath<t.ClassMethod> = bodyBodyPaths.find(p => p.isClassMethod() && p.node.kind === 'constructor') as any;
+					if(!constructorPath) {
+						let constructorNode = t.classMethod(
+							'constructor',
+							t.identifier('constructor'),
+							[],
+							t.blockStatement(
+								classPath.node.superClass ?
+									[t.expressionStatement(t.callExpression(t.super(), [t.spreadElement(t.identifier('arguments'))]))] :
+									[],
+							)
+						);
+						const bodyPath: NodePath<t.ClassBody> = classPath.get('body');
+						constructorPath = bodyPath.unshiftContainer('body', constructorNode)[0];
+					}
 
-						instanceFields.forEach((express, name) => {
-							let statement = t.expressionStatement(
+					instanceFields.forEach((express, name) => {
+						let statement = t.expressionStatement(
+							enumerable ?
+								t.assignmentExpression(
+									"=",
+									t.memberExpression(t.thisExpression(), t.identifier(privateHashes.get(name))),
+									express
+								) :
 								t.callExpression(
 									t.memberExpression(t.identifier('Object'), t.identifier('defineProperty')),
 									[
@@ -96,27 +108,38 @@ export = declare((api, options: PluginOptions = {}) => {
 										])
 									]
 								)
-							);
-							let superPath = constructorPath.get('body.body').find(p => {
-								if(p.isExpressionStatement()) {
-									let callee: NodePath = p.get('expression.callee') as any;
-									if(callee && callee.isSuper()) {
-										return true;
-									}
+						);
+						let superPath = constructorPath.get('body.body').find(p => {
+							if(p.isExpressionStatement()) {
+								let callee: NodePath = p.get('expression.callee') as any;
+								if(callee && callee.isSuper()) {
+									return true;
 								}
-								return false;
-							});
-							if(superPath) {
-								superPath.insertAfter(statement);
-							} else {
-								constructorPath.get('body').unshiftContainer('body', statement);
 							}
+							return false;
 						});
-					}
-					// 处理静态字段
-					if(staticFields.size > 0) {
-						const staticBlockBody: t.ExpressionStatement[] = [];
-						staticFields.forEach((express, name) => {
+						if(superPath) {
+							superPath.insertAfter(statement);
+						} else {
+							constructorPath.get('body').unshiftContainer('body', statement);
+						}
+					});
+				}
+				// 处理静态字段
+				if(staticFields.size > 0) {
+					const staticBlockBody: t.ExpressionStatement[] = [];
+					staticFields.forEach((express, name) => {
+						if(enumerable) {
+							staticBlockBody.push(
+								t.expressionStatement(
+									t.assignmentExpression(
+										"=",
+										t.memberExpression(t.thisExpression(), t.identifier(privateHashes.get(name))),
+										express
+									)
+								)
+							);
+						} else {
 							staticBlockBody.push(
 								t.expressionStatement(
 									t.callExpression(
@@ -134,84 +157,88 @@ export = declare((api, options: PluginOptions = {}) => {
 									)
 								)
 							);
+						}
+					});
+					(classPath.get('body') as NodePath<t.ClassBody>).pushContainer('body',
+						t.staticBlock(staticBlockBody)
+					);
+				}
+				classPath.traverse({
+					Class(classPath: NodePath<t.Class>) {
+						classPath.skip();
+					},
+					ClassPrivateProperty(propertyPath: NodePath<t.ClassPrivateProperty>) {
+						const classPath = propertyPath.findParent(p => p.isClass());
+						const privateNode = propertyPath.node;
+						const hashes = state.classHashStore.get(classPath.node);
+						if(hashes) {
+							const privateName = privateNode.key.id.name;
+							const hash = hashes.get(privateName);
+							if(hash) {
+								if(enumerable) {
+									propertyPath.replaceWith(t.classProperty(t.identifier(hash), privateNode.value, null, null, false, privateNode.static));
+								} else {
+									propertyPath.remove();
+								}
+							}
+						}
+					},
+					ClassPrivateMethod(methodPath: NodePath<t.ClassPrivateMethod>) {
+						const classPath = methodPath.findParent(p => p.isClass());
+						const privateNode = methodPath.node;
+						const hashes = state.classHashStore.get(classPath.node);
+						if(hashes) {
+							const privateName = privateNode.key.id.name;
+							const hash = hashes.get(privateName);
+							if(hash) {
+								methodPath.replaceWith(t.classMethod(privateNode.kind, t.identifier(hash), privateNode.params, privateNode.body, privateNode.computed, privateNode.static, privateNode.generator, privateNode.async));
+							}
+						}
+					},
+
+					MemberExpression(memberExpPath: NodePath<t.MemberExpression>) {
+						const propertyPath = memberExpPath.get('property') as NodePath<t.PrivateName>;
+						const propertyNode = propertyPath.node;
+						if(!t.isPrivateName(propertyNode)) return;
+
+						memberExpPath.findParent(parentPath => {
+							if(parentPath.isClass) {
+								const hashes = state.classHashStore.get(parentPath.node);
+								if(hashes) {
+									const privateName = propertyNode.id.name;
+									const hash = hashes.get(privateName);
+									if(hash) {
+										propertyPath.replaceWith(t.identifier(hash));
+										return true;
+									}
+								}
+							}
+							return false;
 						});
-						(classPath.get('body') as NodePath<t.ClassBody>).pushContainer('body',
-							t.staticBlock(staticBlockBody)
-						);
-					}
-				}
-			},
+					},
 
-			ClassPrivateProperty(propertyPath: NodePath<t.ClassPrivateProperty>, state: PluginState) {
-				const classPath = propertyPath.findParent(p => p.isClass());
-				const privateNode = propertyPath.node;
-				const hashes = state.classHashStore.get(classPath.node);
-				if(hashes) {
-					const privateName = privateNode.key.id.name;
-					const hash = hashes.get(privateName);
-					if(hash) {
-						if(enumerable) {
-							propertyPath.replaceWith(t.classProperty(t.identifier(hash), privateNode.value, null, null, false, privateNode.static));
-						} else {
-							propertyPath.remove();
-						}
-					}
-				}
-			},
-			ClassPrivateMethod(methodPath: NodePath<t.ClassPrivateMethod>, state: PluginState) {
-				const classPath = methodPath.findParent(p => p.isClass());
-				const privateNode = methodPath.node;
-				const hashes = state.classHashStore.get(classPath.node);
-				if(hashes) {
-					const privateName = privateNode.key.id.name;
-					const hash = hashes.get(privateName);
-					if(hash) {
-						methodPath.replaceWith(t.classMethod(privateNode.kind, t.identifier(hash), privateNode.params, privateNode.body, privateNode.computed, privateNode.static, privateNode.generator, privateNode.async));
-					}
-				}
-			},
+					BinaryExpression(binaryPath: NodePath<t.BinaryExpression>) {
+						const leftPath = binaryPath.get('left') as NodePath<t.PrivateName>;
+						const leftNode = leftPath.node;
+						if(!t.isPrivateName(leftNode)) return;
 
-			MemberExpression(memberExpPath: NodePath<t.MemberExpression>, state: PluginState) {
-				const propertyPath = memberExpPath.get('property') as NodePath<t.PrivateName>;
-				const propertyNode = propertyPath.node;
-				if(!t.isPrivateName(propertyNode)) return;
-
-				memberExpPath.findParent(parentPath => {
-					if(parentPath.isClass) {
-						const hashes = state.classHashStore.get(parentPath.node);
-						if(hashes) {
-							const privateName = propertyNode.id.name;
-							const hash = hashes.get(privateName);
-							if(hash) {
-								propertyPath.replaceWith(t.identifier(hash));
-								return true;
+						binaryPath.findParent(parentPath => {
+							if(parentPath.isClass()) {
+								const hashes = state.classHashStore.get(parentPath.node);
+								if(hashes) {
+									const privateName = leftNode.id.name;
+									const hash = hashes.get(privateName);
+									if(hash) {
+										leftPath.replaceWith(t.stringLiteral(hash));
+										return true;
+									}
+								}
 							}
-						}
+							return false;
+						});
 					}
-					return false;
 				});
 			},
-
-			BinaryExpression(binaryPath: NodePath<t.BinaryExpression>, state: PluginState) {
-				const leftPath = binaryPath.get('left') as NodePath<t.PrivateName>;
-				const leftNode = leftPath.node;
-				if(!t.isPrivateName(leftNode)) return;
-
-				binaryPath.findParent(parentPath => {
-					if(parentPath.isClass()) {
-						const hashes = state.classHashStore.get(parentPath.node);
-						if(hashes) {
-							const privateName = leftNode.id.name;
-							const hash = hashes.get(privateName);
-							if(hash) {
-								leftPath.replaceWith(t.stringLiteral(hash));
-								return true;
-							}
-						}
-					}
-					return false;
-				});
-			}
 		}
 	};
 });

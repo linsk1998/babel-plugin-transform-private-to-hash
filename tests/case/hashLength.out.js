@@ -1,4 +1,8 @@
 class MyClass {
-  __bbb0ed = 42;
-  static __48efad = 10;
+  constructor() {
+    this.__bbb0ed = 42;
+  }
+  static {
+    this.__48efad = 10;
+  }
 }
