@@ -86,7 +86,7 @@ export = declare((api, options: PluginOptions = {}) => {
 						const bodyPath: NodePath<t.ClassBody> = classPath.get('body');
 						constructorPath = bodyPath.unshiftContainer('body', constructorNode)[0];
 					}
-
+					let statements: t.ExpressionStatement[] = [];
 					instanceFields.forEach((express, name) => {
 						let statement = t.expressionStatement(
 							enumerable ?
@@ -109,21 +109,22 @@ export = declare((api, options: PluginOptions = {}) => {
 									]
 								)
 						);
-						let superPath = constructorPath.get('body.body').find(p => {
-							if(p.isExpressionStatement()) {
-								let callee: NodePath = p.get('expression.callee') as any;
-								if(callee && callee.isSuper()) {
-									return true;
-								}
-							}
-							return false;
-						});
-						if(superPath) {
-							superPath.insertAfter(statement);
-						} else {
-							constructorPath.get('body').unshiftContainer('body', statement);
-						}
+						statements.push(statement);
 					});
+					let superPath = constructorPath.get('body.body').find(p => {
+						if(p.isExpressionStatement()) {
+							let callee: NodePath = p.get('expression.callee') as any;
+							if(callee && callee.isSuper()) {
+								return true;
+							}
+						}
+						return false;
+					});
+					if(superPath) {
+						superPath.insertAfter(statements);
+					} else {
+						constructorPath.get('body').unshiftContainer('body', statements);
+					}
 				}
 				// 处理静态字段
 				if(staticFields.size > 0) {

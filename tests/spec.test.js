@@ -37,7 +37,7 @@ describe('babel-plugin-transform-private-to-hash', function () {
 	test('no-enumerable', {
 
 	});
-	// test('nest', {
-	// 	enumerable: true
-	// });
+	test('nest', {
+		enumerable: true
+	});
 });

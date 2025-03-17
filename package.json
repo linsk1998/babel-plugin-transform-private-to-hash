@@ -1,6 +1,6 @@
 {
 	"name": "babel-plugin-transform-private-to-hash",
-	"version": "1.1.0",
+	"version": "1.1.1",
 	"description": "Transform ES private fields/methods to hashed properties.",
 	"repository": {
 		"type": "git",
