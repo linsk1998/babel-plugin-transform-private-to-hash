@@ -16,5 +16,6 @@
 	"typescript.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": false,
 	"typescript.format.insertSpaceAfterKeywordsInControlFlowStatements": false,
 	"json.format.keepLines": true,
-	"typescript.tsdk": "node_modules/typescript/lib"
+	"typescript.tsdk": "node_modules/typescript/lib",
+	"javascript.format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces": false
 }
